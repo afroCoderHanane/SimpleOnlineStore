@@ -1,4 +1,5 @@
-# Product API Service
+# [Product API Service]
+[DOC](https://docs.google.com/document/d/1gECje-Mzk39h4Me723CLzGsljHohsDY_Bd7xNSNbTFM/edit?usp=sharing)
 
 A simple RESTful API service for managing product information, built with Go and deployable to AWS ECS using Terraform.
 
