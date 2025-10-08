@@ -1,0 +1,74 @@
+[2025-10-07 20:52:28,502] Abdoul-hananes-MacBook-Air/INFO/locust.main: Starting Locust 2.41.5
+[2025-10-07 20:52:28,507] Abdoul-hananes-MacBook-Air/INFO/locust.main: Run time limit set to 120 seconds
+[2025-10-07 20:52:28,509] Abdoul-hananes-MacBook-Air/INFO/locust.runners: Ramping to 50 users at a rate of 5.00 per second
+[2025-10-07 20:52:37,539] Abdoul-hananes-MacBook-Air/INFO/locust.runners: All users spawned: {"FastProductAPIUser": 50} (50 total users)
+[2025-10-07 20:54:28,028] Abdoul-hananes-MacBook-Air/INFO/locust.main: --run-time limit reached, shutting down
+[2025-10-07 20:54:28,119] Abdoul-hananes-MacBook-Air/INFO/locust.main: writing html report to file: load_test_results_20251007_205000/comparison_fasthttpuser_50u.html
+[2025-10-07 20:54:28,121] Abdoul-hananes-MacBook-Air/INFO/locust.main: Shutting down (exit code 0)
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+GET      /products/[id]                                                                  1736     0(0.00%) |      4       0     313      3 |   14.53        0.00
+POST     /products/[id]/details                                                           597     0(0.00%) |      5       0     293      3 |    5.00        0.00
+GET      /products/[nonexistent]                                                          562     0(0.00%) |      5       0     193      3 |    4.70        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                      2895     0(0.00%) |      5       0     313      3 |   24.23        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+GET      /products/[id]                                                                          3      3      4      4      5      6     32     77    240    310    310   1736
+POST     /products/[id]/details                                                                  3      3      4      4      5      8     31    100    290    290    290    597
+GET      /products/[nonexistent]                                                                 3      3      4      4      5      9     46     91    190    190    190    562
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                              3      3      4      4      5      7     35     78    250    310    310   2895
+
+FastUser viewed 36 products and updated 13
+FastUser viewed 37 products and updated 9
+FastUser viewed 35 products and updated 12
+FastUser viewed 36 products and updated 14
+FastUser viewed 30 products and updated 14
+FastUser viewed 36 products and updated 10
+FastUser viewed 32 products and updated 11
+FastUser viewed 30 products and updated 13
+FastUser viewed 34 products and updated 16
+FastUser viewed 41 products and updated 4
+FastUser viewed 34 products and updated 14
+FastUser viewed 39 products and updated 15
+FastUser viewed 34 products and updated 15
+FastUser viewed 34 products and updated 16
+FastUser viewed 29 products and updated 16
+FastUser viewed 33 products and updated 12
+FastUser viewed 37 products and updated 10
+FastUser viewed 33 products and updated 10
+FastUser viewed 38 products and updated 14
+FastUser viewed 36 products and updated 9
+FastUser viewed 36 products and updated 13
+FastUser viewed 27 products and updated 13
+FastUser viewed 36 products and updated 8
+FastUser viewed 36 products and updated 14
+FastUser viewed 36 products and updated 10
+FastUser viewed 38 products and updated 12
+FastUser viewed 34 products and updated 6
+FastUser viewed 32 products and updated 16
+FastUser viewed 33 products and updated 14
+FastUser viewed 36 products and updated 10
+FastUser viewed 40 products and updated 10
+FastUser viewed 42 products and updated 11
+FastUser viewed 33 products and updated 14
+FastUser viewed 34 products and updated 10
+FastUser viewed 37 products and updated 8
+FastUser viewed 31 products and updated 11
+FastUser viewed 36 products and updated 8
+FastUser viewed 22 products and updated 17
+FastUser viewed 29 products and updated 13
+FastUser viewed 39 products and updated 11
+FastUser viewed 32 products and updated 13
+FastUser viewed 38 products and updated 15
+FastUser viewed 32 products and updated 14
+FastUser viewed 31 products and updated 12
+FastUser viewed 41 products and updated 10
+FastUser viewed 29 products and updated 12
+FastUser viewed 42 products and updated 10
+FastUser viewed 30 products and updated 13
+FastUser viewed 39 products and updated 13
+FastUser viewed 41 products and updated 9

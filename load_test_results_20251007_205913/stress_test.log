@@ -1,0 +1,22 @@
+[2025-10-07 20:59:32,370] Abdoul-hananes-MacBook-Air/INFO/locust.main: Starting Locust 2.41.5
+[2025-10-07 20:59:32,374] Abdoul-hananes-MacBook-Air/INFO/locust.main: Run time limit set to 300 seconds
+[2025-10-07 20:59:32,375] Abdoul-hananes-MacBook-Air/INFO/locust.runners: Ramping to 500 users at a rate of 20.00 per second
+[2025-10-07 20:59:56,586] Abdoul-hananes-MacBook-Air/INFO/locust.runners: All users spawned: {"StressTestUser": 500} (500 total users)
+[2025-10-07 21:04:32,031] Abdoul-hananes-MacBook-Air/INFO/locust.main: --run-time limit reached, shutting down
+[2025-10-07 21:04:32,150] Abdoul-hananes-MacBook-Air/INFO/locust.main: writing html report to file: load_test_results_20251007_205913/stress_test.html
+[2025-10-07 21:04:32,151] Abdoul-hananes-MacBook-Air/INFO/locust.main: Shutting down (exit code 0)
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+GET      /products/[id]                                                                405988     0(0.00%) |     18       0    3714      1 | 1354.55        0.00
+POST     /products/[id]/details                                                         40810     0(0.00%) |     17       0    3708      1 |  136.16        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                    446798     0(0.00%) |     18       0    3714      1 | 1490.71        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+GET      /products/[id]                                                                          1      1      1      1      2     15    160    520   2900   3600   3700 405988
+POST     /products/[id]/details                                                                  1      1      1      1      2     15    150    490   2600   3500   3700  40810
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                              1      1      1      1      2     15    160    520   2900   3600   3700 446798
+
