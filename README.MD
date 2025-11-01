@@ -1,15 +1,15 @@
 # [Product API Service]
 [DOC](https://docs.google.com/document/d/1gECje-Mzk39h4Me723CLzGsljHohsDY_Bd7xNSNbTFM/edit?usp=sharing)
 
-A simple RESTful API service for managing product information, built with Go and deployable to AWS ECS using Terraform.
+A simple RESTful API service for managing product and cart information, built with Go and backed by MySQL.
 
 ## Features
 
 - GET product by ID
-- POST/UPDATE product details
-- In-memory storage with thread-safe operations
+- POST/UPDATE product details persisted in MySQL
+- Repository layer for products, carts, and cart items with transactional cart updates
+- Configurable MySQL connection pooling
 - Docker containerization
-- AWS ECS deployment with Terraform
 - Built-in health checks
 
 ## API Endpoints
@@ -18,7 +18,7 @@ A simple RESTful API service for managing product information, built with Go and
 
 **Endpoint:** `GET /products/{productId}`
 
-**Description:** Retrieve a product's details using its unique identifier
+**Description:** Retrieve a product's details using its unique identifier. The handler fetches data directly from the `products` table.
 
 **Parameters:**
 - `productId` (path, required): Integer >= 1
@@ -58,7 +58,7 @@ curl -X GET http://localhost:8080/products/1
 
 **Endpoint:** `POST /products/{productId}/details`
 
-**Description:** Add or update detailed information for a specific product
+**Description:** Add or update detailed information for a specific product. The handler delegates to the MySQL-backed repository, which issues an `UPDATE` statement.
 
 **Parameters:**
 - `productId` (path, required): Integer >= 1
@@ -109,37 +109,65 @@ curl -X GET http://localhost:8080/health
 
 **Response:** `OK`
 
+## Database Schema
+
+The service expects a MySQL database with three core tables:
+
+- **products** – stores catalog information such as name, description, price, stock level, category, and image URL. Timestamp columns keep track of when the record was created or last updated.
+- **carts** – represents a shopper's cart, keyed by an auto-incrementing identifier with a `user_id` and lifecycle `status` (`open`, `checked_out`, `cancelled`).
+- **cart_items** – line items belonging to a cart. Each row references both a cart and product, tracks quantity and unit price, and enforces uniqueness on `(cart_id, product_id)` to make transactional upserts straightforward.
+
+The canonical schema and seed data for local development live in [`db/schema.sql`](db/schema.sql).
+
+## Configuration
+
+The server reads the following environment variables when building the MySQL connection pool:
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `DB_HOST` | No | MySQL host (default: `localhost`). |
+| `DB_PORT` | No | MySQL port (default: `3306`). |
+| `DB_USER` | Yes | Username used to connect to MySQL. |
+| `DB_PASSWORD` | No | Password for the user. May be blank for local setups. |
+| `DB_NAME` | Yes | Database/schema name that contains the store tables. |
+| `DB_MAX_OPEN_CONNS` | No | Maximum open connections in the pool. Useful for throttling load in production. |
+| `DB_MAX_IDLE_CONNS` | No | Maximum idle connections maintained in the pool. |
+| `DB_CONN_MAX_LIFETIME` | No | Maximum lifetime for a connection before it is recycled (Go duration string, e.g., `30m`). |
+
 ## Local Development
 
 ### Prerequisites
 
 - Go 1.21 or higher
-- Docker
-- Make (optional)
+- Docker (recommended for local MySQL)
 
-### Running Locally
+### Start MySQL
 
-1. **Install dependencies:**
 ```bash
-go mod init product-api
-go get github.com/gorilla/mux
+docker run --name store-mysql -e MYSQL_ROOT_PASSWORD=secret -e MYSQL_DATABASE=store \
+  -p 3306:3306 -d mysql:8
 ```
 
-2. **Create go.mod file:**
-```go
-module product-api
+### Run Migrations
 
-go 1.21
+Apply the schema and seed data:
 
-require github.com/gorilla/mux v1.8.1
+```bash
+mysql -h 127.0.0.1 -P 3306 -u root -psecret store < db/schema.sql
 ```
 
-3. **Run the server:**
+### Run the Server
+
 ```bash
+export DB_HOST=127.0.0.1
+export DB_PORT=3306
+export DB_USER=root
+export DB_PASSWORD=secret
+export DB_NAME=store
 go run main.go
 ```
 
-The server will start on port 8080 with 3 pre-seeded products (IDs: 1, 2, 3).
+The server will start on port 8080 and use the configured MySQL database for all reads and writes. Seed products are inserted (or refreshed) via the migration script.
 
 ### Building Docker Image
 

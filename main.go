@@ -3,12 +3,12 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
@@ -16,16 +16,9 @@ import (
 	"store/internal/cart"
 )
 
-// Product represents the product model based on OpenAPI schema
-type Product struct {
-	ID          int32   `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Price       float64 `json:"price"`
-	Stock       int32   `json:"stock"`
-	Category    string  `json:"category,omitempty"`
-	ImageURL    string  `json:"imageUrl,omitempty"`
-}
+	"store/internal/cart"
+	"store/internal/db"
+)
 
 // Error represents the error response model
 type Error struct {
@@ -115,7 +108,6 @@ func (s *Server) seedData() {
 
 // HandleGetProduct handles GET /products/{productId}
 func (s *Server) HandleGetProduct(w http.ResponseWriter, r *http.Request) {
-	// Extract productId from path
 	vars := mux.Vars(r)
 	productIDStr := vars["productId"]
 
@@ -144,7 +136,6 @@ func (s *Server) HandleGetProduct(w http.ResponseWriter, r *http.Request) {
 
 // HandleAddProductDetails handles POST /products/{productId}/details
 func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request) {
-	// Extract productId from path
 	vars := mux.Vars(r)
 	productIDStr := vars["productId"]
 
@@ -159,7 +150,7 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 	// Parse request body
 	var product Product
 	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields() // Strict parsing
+	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&product); err != nil {
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("Invalid request body: %v", err))
 		return
@@ -255,13 +246,12 @@ func main() {
 	// Health check endpoint (useful for ECS)
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}).Methods("GET")
 
 	// Start server
 	port := "8080"
 	log.Printf("Starting server on port %s", port)
-	log.Printf("Initial products seeded: 3 products available (IDs: 1, 2, 3)")
 	if err := http.ListenAndServe(":"+port, router); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
