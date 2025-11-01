@@ -226,16 +226,19 @@ func TestHandleAddCartItem_RemoveNotFound(t *testing.T) {
 func TestHandleCheckout_Success(t *testing.T) {
 	handler := NewHandler(&mockRepository{
 		getCartWithItems: func(ctx context.Context, cartID int64) (*Cart, error) {
-			return &Cart{
-				ID:     cartID,
-				Status: "open",
-				Items: []Item{{
-					ProductID: 1,
-					Quantity:  2,
-					Price:     5.5,
-				}},
-			}, nil
-		},
+                        return &Cart{
+                                ID:     cartID,
+                                Status: "open",
+                                Items: []Item{{
+                                        ProductID: 1,
+                                        Quantity:  2,
+                                        Product: &Product{
+                                                ID:    1,
+                                                Price: 5.5,
+                                        },
+                                }},
+                        }, nil
+                },
 		checkoutCartFn: func(ctx context.Context, cartID int64, total float64) (int64, error) {
 			require.Equal(t, float64(11), total)
 			return 1001, nil
@@ -297,7 +300,14 @@ func TestHandleCheckout_EmptyCart(t *testing.T) {
 func TestHandleCheckout_AlreadyClosed(t *testing.T) {
 	handler := NewHandler(&mockRepository{
 		getCartWithItems: func(ctx context.Context, cartID int64) (*Cart, error) {
-			return &Cart{ID: cartID, Status: "checked_out", Items: []Item{{ProductID: 1, Quantity: 1, Price: 10}}}, nil
+                        return &Cart{ID: cartID, Status: "checked_out", Items: []Item{{
+                                ProductID: 1,
+                                Quantity:  1,
+                                Product: &Product{
+                                        ID:    1,
+                                        Price: 10,
+                                },
+                        }}}, nil
 		},
 		checkoutCartFn: func(ctx context.Context, cartID int64, total float64) (int64, error) {
 			t.Fatalf("checkout should not be called")
@@ -317,7 +327,14 @@ func TestHandleCheckout_AlreadyClosed(t *testing.T) {
 func TestHandleCheckout_RepositoryError(t *testing.T) {
 	handler := NewHandler(&mockRepository{
 		getCartWithItems: func(ctx context.Context, cartID int64) (*Cart, error) {
-			return &Cart{ID: cartID, Status: "open", Items: []Item{{ProductID: 1, Quantity: 1, Price: 10}}}, nil
+                        return &Cart{ID: cartID, Status: "open", Items: []Item{{
+                                ProductID: 1,
+                                Quantity:  1,
+                                Product: &Product{
+                                        ID:    1,
+                                        Price: 10,
+                                },
+                        }}}, nil
 		},
 		checkoutCartFn: func(ctx context.Context, cartID int64, total float64) (int64, error) {
 			return 0, assertErr
@@ -336,7 +353,14 @@ func TestHandleCheckout_RepositoryError(t *testing.T) {
 func TestHandleCheckout_RepositoryConflict(t *testing.T) {
 	handler := NewHandler(&mockRepository{
 		getCartWithItems: func(ctx context.Context, cartID int64) (*Cart, error) {
-			return &Cart{ID: cartID, Status: "open", Items: []Item{{ProductID: 1, Quantity: 1, Price: 10}}}, nil
+                        return &Cart{ID: cartID, Status: "open", Items: []Item{{
+                                ProductID: 1,
+                                Quantity:  1,
+                                Product: &Product{
+                                        ID:    1,
+                                        Price: 10,
+                                },
+                        }}}, nil
 		},
 		checkoutCartFn: func(ctx context.Context, cartID int64, total float64) (int64, error) {
 			return 0, ErrCartAlreadyClosed
