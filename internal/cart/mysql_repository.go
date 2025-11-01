@@ -111,14 +111,24 @@ func (r *MySQLRepository) GetCartWithItems(ctx context.Context, cartID int64) (*
 			}
 		}
 
-		if productID.Valid {
-			cart.Items = append(cart.Items, Item{
-				ProductID:   productID.Int64,
-				Quantity:    int32(quantity.Int64),
-				ProductName: name.String,
-				Price:       price.Float64,
-			})
-		}
+                if productID.Valid {
+                        qty := int32(0)
+                        if quantity.Valid {
+                                qty = int32(quantity.Int64)
+                        }
+
+                        prod := &Product{
+                                ID:    productID.Int64,
+                                Name:  name.String,
+                                Price: price.Float64,
+                        }
+
+                        cart.Items = append(cart.Items, Item{
+                                ProductID: productID.Int64,
+                                Quantity:  qty,
+                                Product:   prod,
+                        })
+                }
 	}
 
 	if err := rows.Err(); err != nil {
