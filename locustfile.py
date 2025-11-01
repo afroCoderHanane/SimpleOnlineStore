@@ -13,6 +13,33 @@ PRODUCT_IDS = [1, 2, 3]  # Pre-seeded product IDs
 CATEGORIES = ["Electronics", "Gaming", "Office", "Home", "Sports"]
 
 
+def ensure_cart(user):
+    """Ensure the user has an active shopping cart by creating one if necessary."""
+    cart_id = getattr(user, "cart_id", None)
+    if cart_id:
+        return True
+
+    response = user.client.post(
+        "/shopping-carts",
+        json={"customer_id": random.randint(1, 100000)},
+        name="/shopping-carts",
+        catch_response=True,
+    )
+    with response as resp:
+        if resp.status_code == 201:
+            try:
+                data = resp.json()
+            except ValueError:
+                resp.failure("Invalid JSON from create cart")
+                return False
+            user.cart_id = data.get("shopping_cart_id")
+            user.cart_items = 0
+            resp.success()
+            return True
+        resp.failure(f"Create cart failed with {resp.status_code}")
+        return False
+
+
 class ProductAPIUser(HttpUser):
     """
     Standard HttpUser implementation using Python requests library.
@@ -25,6 +52,8 @@ class ProductAPIUser(HttpUser):
         """Called when a user starts before any task is scheduled"""
         self.products_viewed = []
         self.products_updated = []
+        self.cart_id = None
+        self.cart_items = 0
     
     @task(3)  # Weight of 3 - this task is 3x more likely than weight 1 tasks
     def get_product(self):
@@ -79,7 +108,7 @@ class ProductAPIUser(HttpUser):
     def get_nonexistent_product(self):
         """Occasionally test 404 handling"""
         product_id = random.randint(100, 999)  # IDs that don't exist
-        
+
         with self.client.get(
             f"/products/{product_id}",
             catch_response=True,
@@ -89,6 +118,57 @@ class ProductAPIUser(HttpUser):
                 response.success()  # 404 is expected here
             else:
                 response.failure(f"Expected 404 but got {response.status_code}")
+
+    @task(1)
+    def add_item_to_cart(self):
+        """Add an item to the active shopping cart."""
+        if not ensure_cart(self):
+            return
+
+        product_id = random.choice(PRODUCT_IDS)
+        quantity = random.randint(1, 3)
+
+        with self.client.post(
+            f"/shopping-carts/{self.cart_id}/items",
+            json={"product_id": product_id, "quantity": quantity},
+            catch_response=True,
+            name="/shopping-carts/[id]/items",
+        ) as response:
+            if response.status_code == 204:
+                self.cart_items += quantity
+                response.success()
+            elif response.status_code in (404, 400):
+                response.failure(f"Cart item update failed: {response.status_code}")
+            else:
+                response.failure(f"Unexpected status {response.status_code}")
+
+    @task(1)
+    def checkout_cart(self):
+        """Checkout the cart when it has items."""
+        if not getattr(self, "cart_id", None) or getattr(self, "cart_items", 0) == 0:
+            return
+
+        with self.client.post(
+            f"/shopping-carts/{self.cart_id}/checkout",
+            name="/shopping-carts/[id]/checkout",
+            catch_response=True,
+        ) as response:
+            if response.status_code == 200:
+                try:
+                    order = response.json()
+                except ValueError:
+                    response.failure("Invalid JSON response from checkout")
+                    return
+                if order.get("order_id"):
+                    response.success()
+                else:
+                    response.failure("Missing order_id in checkout response")
+                self.cart_id = None
+                self.cart_items = 0
+            elif response.status_code in (400, 404):
+                response.failure(f"Checkout failed: {response.status_code}")
+            else:
+                response.failure(f"Unexpected checkout status {response.status_code}")
     
     def on_stop(self):
         """Called when the user stops"""
@@ -112,6 +192,8 @@ class FastProductAPIUser(FastHttpUser):
         """Called when a user starts before any task is scheduled"""
         self.products_viewed = []
         self.products_updated = []
+        self.cart_id = None
+        self.cart_items = 0
     
     @task(3)
     def get_product(self):
@@ -165,7 +247,7 @@ class FastProductAPIUser(FastHttpUser):
     def get_nonexistent_product(self):
         """Occasionally test 404 handling"""
         product_id = random.randint(100, 999)
-        
+
         with self.client.get(
             f"/products/{product_id}",
             catch_response=True,
@@ -175,6 +257,55 @@ class FastProductAPIUser(FastHttpUser):
                 response.success()
             else:
                 response.failure(f"Expected 404 but got {response.status_code}")
+
+    @task(1)
+    def add_item_to_cart(self):
+        if not ensure_cart(self):
+            return
+
+        product_id = random.choice(PRODUCT_IDS)
+        quantity = random.randint(1, 3)
+
+        with self.client.post(
+            f"/shopping-carts/{self.cart_id}/items",
+            json={"product_id": product_id, "quantity": quantity},
+            catch_response=True,
+            name="/shopping-carts/[id]/items",
+        ) as response:
+            if response.status_code == 204:
+                self.cart_items += quantity
+                response.success()
+            elif response.status_code in (400, 404):
+                response.failure(f"Cart item update failed: {response.status_code}")
+            else:
+                response.failure(f"Unexpected status {response.status_code}")
+
+    @task(1)
+    def checkout_cart(self):
+        if not getattr(self, "cart_id", None) or getattr(self, "cart_items", 0) == 0:
+            return
+
+        with self.client.post(
+            f"/shopping-carts/{self.cart_id}/checkout",
+            name="/shopping-carts/[id]/checkout",
+            catch_response=True,
+        ) as response:
+            if response.status_code == 200:
+                try:
+                    order = response.json()
+                except ValueError:
+                    response.failure("Invalid JSON response from checkout")
+                    return
+                if order.get("order_id"):
+                    response.success()
+                else:
+                    response.failure("Missing order_id in checkout response")
+                self.cart_id = None
+                self.cart_items = 0
+            elif response.status_code in (400, 404):
+                response.failure(f"Checkout failed: {response.status_code}")
+            else:
+                response.failure(f"Unexpected checkout status {response.status_code}")
     
     def on_stop(self):
         """Called when the user stops"""
@@ -190,6 +321,10 @@ class StressTestUser(FastHttpUser):
     wait_time = between(0.1, 0.5)  # Much shorter wait times
     connection_timeout = 30.0
     network_timeout = 30.0
+
+    def on_start(self):
+        self.cart_id = None
+        self.cart_items = 0
     
     @task(10)  # Heavy emphasis on reads
     def rapid_get(self):
@@ -215,6 +350,31 @@ class StressTestUser(FastHttpUser):
             name="/products/[id]/details"
         )
 
+    @task(1)
+    def cart_mutation(self):
+        if not ensure_cart(self):
+            return
+
+        product_id = random.choice(PRODUCT_IDS)
+        quantity = random.randint(1, 5)
+        self.client.post(
+            f"/shopping-carts/{self.cart_id}/items",
+            json={"product_id": product_id, "quantity": quantity},
+            name="/shopping-carts/[id]/items",
+        )
+        self.cart_items += quantity
+
+    @task(1)
+    def cart_checkout(self):
+        if getattr(self, "cart_id", None) and getattr(self, "cart_items", 0) > 0:
+            response = self.client.post(
+                f"/shopping-carts/{self.cart_id}/checkout",
+                name="/shopping-carts/[id]/checkout",
+            )
+            if response.status_code == 200:
+                self.cart_id = None
+                self.cart_items = 0
+
 
 class MixedBehaviorUser(HttpUser):
     """
@@ -225,7 +385,8 @@ class MixedBehaviorUser(HttpUser):
     wait_time = between(2, 5)
     
     def on_start(self):
-        self.shopping_cart = []
+        self.cart_id = None
+        self.cart_items = 0
     
     @task(5)
     def browse_products(self):
@@ -241,9 +402,13 @@ class MixedBehaviorUser(HttpUser):
                 # Simulate thinking time while looking at product
                 time.sleep(random.uniform(0.5, 2))
                 
-                # Sometimes add to cart (just tracking, not implemented)
-                if random.random() > 0.7:
-                    self.shopping_cart.append(product_id)
+                if random.random() > 0.7 and ensure_cart(self):
+                    self.client.post(
+                        f"/shopping-carts/{self.cart_id}/items",
+                        json={"product_id": product_id, "quantity": 1},
+                        name="/shopping-carts/[id]/items",
+                    )
+                    self.cart_items += 1
     
     @task(2)
     def compare_products(self):
@@ -292,3 +457,14 @@ class MixedBehaviorUser(HttpUser):
             json=data,
             name="/products/[id]/details"
         )
+
+    @task(1)
+    def periodic_checkout(self):
+        if getattr(self, "cart_id", None) and getattr(self, "cart_items", 0) > 0:
+            response = self.client.post(
+                f"/shopping-carts/{self.cart_id}/checkout",
+                name="/shopping-carts/[id]/checkout",
+            )
+            if response.status_code == 200:
+                self.cart_id = None
+                self.cart_items = 0

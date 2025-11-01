@@ -1,15 +1,20 @@
 package main
 
 import (
-	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
+
+	"store/internal/cart"
+)
 
 	"store/internal/cart"
 	"store/internal/db"
@@ -21,14 +26,84 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// ProductStore handles in-memory storage with thread safety
+type ProductStore struct {
+	mu       sync.RWMutex
+	products map[int32]*Product
+	nextID   int32
+}
+
+// NewProductStore creates a new product store
+func NewProductStore() *ProductStore {
+	return &ProductStore{
+		products: make(map[int32]*Product),
+		nextID:   1,
+	}
+}
+
+// GetProduct retrieves a product by ID (thread-safe read)
+func (s *ProductStore) GetProduct(id int32) (*Product, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	product, exists := s.products[id]
+	return product, exists
+}
+
+// AddOrUpdateProduct adds or updates product details (thread-safe write)
+func (s *ProductStore) AddOrUpdateProduct(id int32, product *Product) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Check if product exists
+	if _, exists := s.products[id]; !exists {
+		return false
+	}
+
+	// Update the product, preserving the ID
+	product.ID = id
+	s.products[id] = product
+	return true
+}
+
+// CreateProduct creates a new product (for initial data seeding)
+func (s *ProductStore) CreateProduct(product *Product) *Product {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	product.ID = s.nextID
+	s.products[s.nextID] = product
+	s.nextID++
+	return product
+}
+
 // Server represents the HTTP server
 type Server struct {
-	repo *cart.Repository
+	store       *ProductStore
+	cartHandler *cart.Handler
 }
 
 // NewServer creates a new server instance
-func NewServer(repo *cart.Repository) *Server {
-	return &Server{repo: repo}
+func NewServer(cartHandler *cart.Handler) *Server {
+	server := &Server{
+		store:       NewProductStore(),
+		cartHandler: cartHandler,
+	}
+	// Seed some initial products for testing
+	server.seedData()
+	return server
+}
+
+// seedData adds initial products for testing
+func (s *Server) seedData() {
+	products := []*Product{
+		{Name: "Laptop", Description: "High-performance laptop", Price: 999.99, Stock: 10, Category: "Electronics"},
+		{Name: "Mouse", Description: "Wireless mouse", Price: 29.99, Stock: 50, Category: "Electronics"},
+		{Name: "Keyboard", Description: "Mechanical keyboard", Price: 79.99, Stock: 30, Category: "Electronics"},
+	}
+
+	for _, p := range products {
+		s.store.CreateProduct(p)
+	}
 }
 
 // HandleGetProduct handles GET /products/{productId}
@@ -36,6 +111,7 @@ func (s *Server) HandleGetProduct(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	productIDStr := vars["productId"]
 
+	// Parse and validate productId
 	productID64, err := strconv.ParseInt(productIDStr, 10, 32)
 	if err != nil || productID64 < 1 {
 		writeErrorResponse(w, http.StatusBadRequest, "Invalid product ID format")
@@ -43,17 +119,14 @@ func (s *Server) HandleGetProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	productID := int32(productID64)
 
-	product, err := s.repo.GetProduct(r.Context(), productID)
-	if err != nil {
-		if errors.Is(err, cart.ErrNotFound) {
-			writeErrorResponse(w, http.StatusNotFound, fmt.Sprintf("Product with ID %d not found", productID))
-			return
-		}
-		log.Printf("Error retrieving product %d: %v", productID, err)
-		writeErrorResponse(w, http.StatusInternalServerError, "Internal server error")
+	// Retrieve product from store
+	product, exists := s.store.GetProduct(productID)
+	if !exists {
+		writeErrorResponse(w, http.StatusNotFound, fmt.Sprintf("Product with ID %d not found", productID))
 		return
 	}
 
+	// Return successful response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(product); err != nil {
@@ -66,6 +139,7 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	productIDStr := vars["productId"]
 
+	// Parse and validate productId
 	productID64, err := strconv.ParseInt(productIDStr, 10, 32)
 	if err != nil || productID64 < 1 {
 		writeErrorResponse(w, http.StatusBadRequest, "Invalid product ID format")
@@ -73,7 +147,8 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 	}
 	productID := int32(productID64)
 
-	var product cart.Product
+	// Parse request body
+	var product Product
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&product); err != nil {
@@ -81,21 +156,19 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Validate required fields
 	if product.Name == "" || product.Price < 0 || product.Stock < 0 {
 		writeErrorResponse(w, http.StatusBadRequest, "Invalid product data: name is required, price and stock must be non-negative")
 		return
 	}
 
-	if err := s.repo.UpdateProduct(r.Context(), productID, &product); err != nil {
-		if errors.Is(err, cart.ErrNotFound) {
-			writeErrorResponse(w, http.StatusNotFound, fmt.Sprintf("Product with ID %d not found", productID))
-			return
-		}
-		log.Printf("Error updating product %d: %v", productID, err)
-		writeErrorResponse(w, http.StatusInternalServerError, "Internal server error")
+	// Update product in store
+	if !s.store.AddOrUpdateProduct(productID, &product) {
+		writeErrorResponse(w, http.StatusNotFound, fmt.Sprintf("Product with ID %d not found", productID))
 		return
 	}
 
+	// Return 204 No Content on success
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -136,29 +209,47 @@ func RecoveryMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	ctx := context.Background()
-
-	mysqlDB, err := db.NewMySQLDB(ctx)
-	if err != nil {
-		log.Fatalf("Failed to initialize MySQL connection: %v", err)
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		log.Fatal("MYSQL_DSN environment variable must be set")
 	}
-	defer mysqlDB.Close()
 
-	repository := cart.NewRepository(mysqlDB)
-	server := NewServer(repository)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatalf("Failed to connect to MySQL: %v", err)
+	}
+	defer db.Close()
 
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Unable to reach MySQL: %v", err)
+	}
+
+	cartHandler := cart.NewHandler(cart.NewMySQLRepository(db))
+
+	// Create server
+	server := NewServer(cartHandler)
+
+	// Setup routes
 	router := mux.NewRouter()
+
+	// Apply middleware
 	router.Use(LoggingMiddleware)
 	router.Use(RecoveryMiddleware)
 
+	// Product endpoints
 	router.HandleFunc("/products/{productId:[0-9]+}", server.HandleGetProduct).Methods("GET")
 	router.HandleFunc("/products/{productId:[0-9]+}/details", server.HandleAddProductDetails).Methods("POST")
 
+	// Shopping cart endpoints
+	server.cartHandler.RegisterRoutes(router)
+
+	// Health check endpoint (useful for ECS)
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	}).Methods("GET")
 
+	// Start server
 	port := "8080"
 	log.Printf("Starting server on port %s", port)
 	if err := http.ListenAndServe(":"+port, router); err != nil {

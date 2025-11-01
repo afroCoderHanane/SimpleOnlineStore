@@ -303,6 +303,30 @@ locust -f locustfile.py --host http://localhost:8080 --users 100 --spawn-rate 10
 locust -f locustfile.py --host http://localhost:8080 --users 100 --spawn-rate 10
 ```
 
+### Cart Load Test Harness (Week 6c)
+Use the Python-based harness to replay the cart workflow (50 create, add-items,
+and get-cart requests each) and persist the latency distribution in
+`mysql_test_results.json`.
+
+```bash
+# Optional one-time dependency installation
+pip install requests
+
+# Execute the harness against the running API (update --host as needed)
+python3 cart_load_test.py --host http://localhost:8080
+```
+
+The script stores detailed per-request measurements in
+`mysql_test_results.json`, using the following structure:
+
+- `metadata`: timestamp, target host, and request counts
+- `results.create_cart`, `results.add_items`, `results.get_cart`: arrays of
+  individual operation outcomes (status, latency, and error details when
+  applicable)
+
+Commit the generated JSON artifact for the Week 6c comparison to keep a stable
+baseline across environments.
+
 ## Deployment to AWS ECS
 
 ### Prerequisites
