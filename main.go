@@ -1,14 +1,19 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
+
+	"store/internal/cart"
 )
 
 // Product represents the product model based on OpenAPI schema
@@ -55,12 +60,12 @@ func (s *ProductStore) GetProduct(id int32) (*Product, bool) {
 func (s *ProductStore) AddOrUpdateProduct(id int32, product *Product) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Check if product exists
 	if _, exists := s.products[id]; !exists {
 		return false
 	}
-	
+
 	// Update the product, preserving the ID
 	product.ID = id
 	s.products[id] = product
@@ -71,7 +76,7 @@ func (s *ProductStore) AddOrUpdateProduct(id int32, product *Product) bool {
 func (s *ProductStore) CreateProduct(product *Product) *Product {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	product.ID = s.nextID
 	s.products[s.nextID] = product
 	s.nextID++
@@ -80,13 +85,15 @@ func (s *ProductStore) CreateProduct(product *Product) *Product {
 
 // Server represents the HTTP server
 type Server struct {
-	store *ProductStore
+	store       *ProductStore
+	cartHandler *cart.Handler
 }
 
 // NewServer creates a new server instance
-func NewServer() *Server {
+func NewServer(cartHandler *cart.Handler) *Server {
 	server := &Server{
-		store: NewProductStore(),
+		store:       NewProductStore(),
+		cartHandler: cartHandler,
 	}
 	// Seed some initial products for testing
 	server.seedData()
@@ -100,7 +107,7 @@ func (s *Server) seedData() {
 		{Name: "Mouse", Description: "Wireless mouse", Price: 29.99, Stock: 50, Category: "Electronics"},
 		{Name: "Keyboard", Description: "Mechanical keyboard", Price: 79.99, Stock: 30, Category: "Electronics"},
 	}
-	
+
 	for _, p := range products {
 		s.store.CreateProduct(p)
 	}
@@ -111,7 +118,7 @@ func (s *Server) HandleGetProduct(w http.ResponseWriter, r *http.Request) {
 	// Extract productId from path
 	vars := mux.Vars(r)
 	productIDStr := vars["productId"]
-	
+
 	// Parse and validate productId
 	productID64, err := strconv.ParseInt(productIDStr, 10, 32)
 	if err != nil || productID64 < 1 {
@@ -119,14 +126,14 @@ func (s *Server) HandleGetProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	productID := int32(productID64)
-	
+
 	// Retrieve product from store
 	product, exists := s.store.GetProduct(productID)
 	if !exists {
 		writeErrorResponse(w, http.StatusNotFound, fmt.Sprintf("Product with ID %d not found", productID))
 		return
 	}
-	
+
 	// Return successful response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -140,7 +147,7 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 	// Extract productId from path
 	vars := mux.Vars(r)
 	productIDStr := vars["productId"]
-	
+
 	// Parse and validate productId
 	productID64, err := strconv.ParseInt(productIDStr, 10, 32)
 	if err != nil || productID64 < 1 {
@@ -148,7 +155,7 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	productID := int32(productID64)
-	
+
 	// Parse request body
 	var product Product
 	decoder := json.NewDecoder(r.Body)
@@ -157,19 +164,19 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 		writeErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("Invalid request body: %v", err))
 		return
 	}
-	
+
 	// Validate required fields
 	if product.Name == "" || product.Price < 0 || product.Stock < 0 {
 		writeErrorResponse(w, http.StatusBadRequest, "Invalid product data: name is required, price and stock must be non-negative")
 		return
 	}
-	
+
 	// Update product in store
 	if !s.store.AddOrUpdateProduct(productID, &product) {
 		writeErrorResponse(w, http.StatusNotFound, fmt.Sprintf("Product with ID %d not found", productID))
 		return
 	}
-	
+
 	// Return 204 No Content on success
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -178,12 +185,12 @@ func (s *Server) HandleAddProductDetails(w http.ResponseWriter, r *http.Request)
 func writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	errorResponse := Error{
 		Code:    statusCode,
 		Message: message,
 	}
-	
+
 	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
 		log.Printf("Error encoding error response: %v", err)
 	}
@@ -211,26 +218,46 @@ func RecoveryMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		log.Fatal("MYSQL_DSN environment variable must be set")
+	}
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatalf("Failed to connect to MySQL: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Unable to reach MySQL: %v", err)
+	}
+
+	cartHandler := cart.NewHandler(cart.NewMySQLRepository(db))
+
 	// Create server
-	server := NewServer()
-	
+	server := NewServer(cartHandler)
+
 	// Setup routes
 	router := mux.NewRouter()
-	
+
 	// Apply middleware
 	router.Use(LoggingMiddleware)
 	router.Use(RecoveryMiddleware)
-	
+
 	// Product endpoints
 	router.HandleFunc("/products/{productId:[0-9]+}", server.HandleGetProduct).Methods("GET")
 	router.HandleFunc("/products/{productId:[0-9]+}/details", server.HandleAddProductDetails).Methods("POST")
-	
+
+	// Shopping cart endpoints
+	server.cartHandler.RegisterRoutes(router)
+
 	// Health check endpoint (useful for ECS)
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	}).Methods("GET")
-	
+
 	// Start server
 	port := "8080"
 	log.Printf("Starting server on port %s", port)
